@@ -1,0 +1,110 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flymate_bot
+    restart: unless-stopped
+    command: python bot/main.py
+    env_file:
+      - bot/.env
+    environment:
+      POSTGRES_HOST: db  
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      db:  
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - flymate-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flymate_worker
+    restart: unless-stopped
+    command: python bot/worker.py
+    env_file:
+      - bot/.env
+    environment:
+      POSTGRES_HOST: db  
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      WORKER_LOG_FILE: /app/logs/worker.log
+    depends_on:
+      db:  
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - flymate-net
+
+  db:
+    image: postgres:16
+    container_name: flymate-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${POSTGRES_TZ}
+      PGTZ: ${POSTGRES_TZ}
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=256MB
+      -c effective_cache_size=2GB
+      -c max_connections=200
+      -c wal_level=replica
+      -c archive_mode=off
+      -c max_wal_size=2GB
+      -c timezone=${POSTGRES_TZ}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db/backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - flymate-net
+
+  redis:
+    image: redis:7
+    container_name: flymate-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - flymate-net
+
+networks:
+  flymate-net:
+    driver: bridge
+
+volumes:
+  db_data:
+  redis_data:

@@ -1,0 +1,24 @@
+# Telegram Bot Framework
+aiogram==3.22.0
+aiogram-dialog==2.4.0
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Redis
+redis==5.2.0
+
+# HTTP Client
+aiohttp==3.11.11
+
+# Date & Time
+python-dateutil==2.9.0
+
+# Configuration
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Other
+python-dotenv==1.0.1
