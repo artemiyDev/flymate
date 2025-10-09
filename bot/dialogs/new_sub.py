@@ -8,7 +8,7 @@ from aiogram_dialog.widgets.input import TextInput
 from aiogram_dialog.widgets.kbd import (
     Next, Back, Cancel, Button, Calendar,
 )
-from aiogram_dialog.api.entities.modes import ShowMode
+from aiogram_dialog.api.entities.modes import ShowMode, StartMode
 
 from bot.db.engine import get_sessionmaker
 from bot.db.repo_subscriptions import SubscriptionsRepo
@@ -73,17 +73,8 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
     except Exception:
         pass
 
-    # Delete initial dialog message
-    try:
-        # Get current message from manager's last interaction
-        if hasattr(manager, 'middleware_data'):
-            last_message = manager.middleware_data.get('aiogd_last_message')
-            if last_message:
-                await last_message.delete()
-    except Exception:
-        pass
-
-    manager.show_mode = ShowMode.EDIT
+    # Delete and send new message instead of editing
+    manager.show_mode = ShowMode.DELETE_AND_SEND
 
     # Set default values if not specified
     if "currency" not in manager.dialog_data:
@@ -97,13 +88,8 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
 
 async def on_manual_fill(c: CallbackQuery, b: Button, manager: DialogManager):
     """Handle 'Fill manually' button click."""
-    # Delete initial dialog message
-    try:
-        await c.message.delete()
-    except Exception:
-        pass
-
-    manager.show_mode = ShowMode.EDIT
+    # Delete and send new message instead of editing
+    manager.show_mode = ShowMode.DELETE_AND_SEND
     await manager.next()
 
 
