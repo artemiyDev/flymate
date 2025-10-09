@@ -21,25 +21,25 @@ class MySubsSG(StatesGroup):
 # --- callbacks ---
 
 async def on_sub_select(c: CallbackQuery, widget: Select, manager: DialogManager, item_id: str):
-    """Когда пользователь выбирает подписку."""
+    """When user selects a subscription."""
     manager.dialog_data["selected_sub_id"] = int(item_id)
     await manager.switch_to(MySubsSG.select_action)
 
 
 async def on_edit_price_action(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Переход к редактированию цены."""
+    """Navigate to price editing."""
     manager.show_mode = ShowMode.EDIT
     await manager.switch_to(MySubsSG.edit_price)
 
 
 async def on_delete_action(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Переход к подтверждению удаления."""
+    """Navigate to deletion confirmation."""
     manager.show_mode = ShowMode.EDIT
     await manager.switch_to(MySubsSG.confirm_delete)
 
 
 async def on_price_input(m: Message, widget: TextInput, manager: DialogManager, value: str):
-    """Обработка ввода новой цены."""
+    """Handle new price input."""
     try:
         new_price = float(value.replace(",", "."))
         if new_price <= 0:
@@ -76,13 +76,13 @@ async def on_price_input(m: Message, widget: TextInput, manager: DialogManager, 
 
 
 async def skip_price_input(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Отмена редактирования цены."""
+    """Cancel price editing."""
     manager.show_mode = ShowMode.EDIT
     await manager.switch_to(MySubsSG.select_action)
 
 
 async def on_delete_confirm(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Подтверждение удаления подписки."""
+    """Confirm subscription deletion."""
     sub_id = manager.dialog_data.get("selected_sub_id")
     if not sub_id:
         await c.answer("Ошибка: подписка не выбрана", show_alert=True)
@@ -103,7 +103,7 @@ async def on_delete_confirm(c: CallbackQuery, b: Button, manager: DialogManager)
 
 
 async def on_cancel_delete(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Отмена удаления."""
+    """Cancel deletion."""
     manager.show_mode = ShowMode.EDIT
     await manager.switch_to(MySubsSG.list)
 
@@ -111,7 +111,7 @@ async def on_cancel_delete(c: CallbackQuery, b: Button, manager: DialogManager):
 # --- getters ---
 
 async def subs_list_getter(dialog_manager: DialogManager, **kwargs):
-    """Получает список подписок пользователя."""
+    """Get user's subscription list."""
     user_id = dialog_manager.event.from_user.id
 
     Session = get_sessionmaker()
@@ -127,11 +127,11 @@ async def subs_list_getter(dialog_manager: DialogManager, **kwargs):
 
     subs_data = []
     for sub in subs:
-        # Форматируем данные для отображения
+        # Format data for display
         price_text = "без ограничения" if sub.max_price >= 999999999 else f"до {int(sub.max_price)} {sub.currency}"
 
         subs_data.append({
-            "id": str(sub.id),  # Преобразуем в строку для item_id_getter
+            "id": str(sub.id),  # Convert to string for item_id_getter
             "text": f"{sub.origin} → {sub.destination} | {sub.range_from.strftime('%d.%m')}—{sub.range_to.strftime('%d.%m')} | {price_text}",
         })
 
@@ -143,7 +143,7 @@ async def subs_list_getter(dialog_manager: DialogManager, **kwargs):
 
 
 async def selected_sub_getter(dialog_manager: DialogManager, **kwargs):
-    """Получает данные выбранной подписки."""
+    """Get selected subscription data."""
     sub_id = dialog_manager.dialog_data.get("selected_sub_id")
     user_id = dialog_manager.event.from_user.id
 
@@ -173,7 +173,7 @@ async def selected_sub_getter(dialog_manager: DialogManager, **kwargs):
 
 
 async def confirm_delete_getter(dialog_manager: DialogManager, **kwargs):
-    """Получает данные выбранной подписки для подтверждения удаления."""
+    """Get selected subscription data for deletion confirmation."""
     return await selected_sub_getter(dialog_manager, **kwargs)
 
 

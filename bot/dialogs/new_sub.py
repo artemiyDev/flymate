@@ -28,14 +28,14 @@ class NewSubSG(StatesGroup):
 # --- callbacks ---
 
 async def process_text_input(m: Message, w, manager: DialogManager, value: str):
-    """Обрабатывает свободный текстовый ввод через GPT."""
-    # Показываем пользователю, что идёт обработка
+    """Process free-form text input via GPT."""
+    # Show user that processing is in progress
     processing_msg = await m.answer("⏳ Обрабатываю запрос...")
 
-    # Парсим через GPT
+    # Parse via GPT
     parsed = await parse_text_request(value)
 
-    # Удаляем сообщение об обработке
+    # Delete processing message
     try:
         await processing_msg.delete()
     except Exception:
@@ -50,13 +50,13 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
         )
         return
 
-    # Сохраняем распарсенные данные в dialog_data
+    # Save parsed data to dialog_data
     manager.dialog_data["origin"] = parsed.get("departure", "").upper()
     manager.dialog_data["destination"] = parsed.get("destination", "").upper()
     manager.dialog_data["date_from"] = parsed.get("range_from", "")
     manager.dialog_data["date_to"] = parsed.get("range_to", "")
 
-    # Опциональные поля
+    # Optional fields
     if "currency" in parsed:
         manager.dialog_data["currency"] = parsed.get("currency", "").upper()
     if "max_price" in parsed:
@@ -69,30 +69,30 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
     manager.dialog_data["direct"] = direct
 
     try:
-        await m.delete()  # удалить ввод пользователя
+        await m.delete()  # Delete user input
     except Exception:
         pass
 
     manager.show_mode = ShowMode.EDIT
 
-    # Устанавливаем значения по умолчанию, если они не указаны
+    # Set default values if not specified
     if "currency" not in manager.dialog_data:
         manager.dialog_data["currency"] = "RUB"
     if "max_price" not in manager.dialog_data:
         manager.dialog_data["max_price"] = None
 
-    # Переходим к подтверждению (все данные уже есть или установлены по умолчанию)
+    # Navigate to confirmation (all data is already present or set to defaults)
     await manager.switch_to(NewSubSG.confirm)
 
 
 async def set_origin(m, w, manager, value: str):
     manager.dialog_data["origin"] = value.strip().upper()
     try:
-        await m.delete()                    # удалить ввод пользователя
+        await m.delete()  # Delete user input
     except Exception:
         pass
-    manager.show_mode = ShowMode.EDIT       # следующий апдейт = редактирование
-    await manager.next()                    # перейти к следующему окну
+    manager.show_mode = ShowMode.EDIT  # Next update = edit mode
+    await manager.next()  # Move to next window
 
 # destination
 async def set_destination(m, w, manager, value: str):
@@ -116,7 +116,7 @@ async def on_return_selected(
     c: CallbackQuery, widget: Calendar, manager: DialogManager, selected_date: date
 ):
     manager.dialog_data["date_to"] = selected_date.isoformat()
-    # проверим, что возврат не раньше вылета
+    # Check that return is not before departure
     if manager.dialog_data["date_to"] < manager.dialog_data["date_from"]:
         await c.answer("Дата возврата не может быть раньше даты вылета", show_alert=True)
         return
@@ -138,13 +138,13 @@ async def choose_eur(c: CallbackQuery, b: Button, manager: DialogManager):
     await manager.next()
 
 async def skip_currency(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Пропустить выбор валюты (использовать RUB по умолчанию)."""
+    """Skip currency selection (use RUB by default)."""
     manager.dialog_data["currency"] = "RUB"
     manager.show_mode = ShowMode.EDIT
     await manager.next()
 
 async def skip_budget(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Пропустить ввод бюджета (использовать None)."""
+    """Skip budget input (use None)."""
     manager.dialog_data["max_price"] = None
     manager.show_mode = ShowMode.EDIT
     await manager.next()
@@ -156,23 +156,23 @@ async def set_budget(m, w, manager, value: str):
     except Exception:
         pass
     manager.show_mode = ShowMode.EDIT
-    await manager.next()  # к confirm
+    await manager.next()  # To confirm
 
 
 
 async def on_save(c: CallbackQuery, b: Button, manager: DialogManager):
     data = manager.dialog_data
-    # минимальная валидация обязательных полей
+    # Minimal validation of required fields
     if not all(k in data for k in ("origin", "destination", "date_from", "date_to", "currency")):
         await c.answer("Не все параметры заполнены", show_alert=True)
         return
 
-    # max_price может быть None (без ограничения)
+    # max_price can be None (no limit)
     max_price_value = data.get("max_price")
     if max_price_value is not None:
         max_price_value = float(max_price_value)
     else:
-        # Если None, установим очень большое значение для БД (например, 999999999)
+        # If None, set very large value for DB (e.g. 999999999)
         max_price_value = 999999999.0
 
     Session = get_sessionmaker()
@@ -195,7 +195,7 @@ async def on_save(c: CallbackQuery, b: Button, manager: DialogManager):
     await manager.done()
 
 
-# --- getters для Format ---
+# --- getters for Format ---
 
 async def depart_getter(dialog_manager: DialogManager, **kwargs):
     return {
