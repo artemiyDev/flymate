@@ -56,6 +56,12 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
     if "max_price" in parsed:
         manager.dialog_data["max_price"] = parsed.get("max_price")
 
+    if "direct" in parsed:
+        manager.dialog_data["max_price"] = parsed.get("max_price")
+
+    direct = parsed.get("direct", False)
+    manager.dialog_data["direct"] = direct
+
     try:
         await m.delete()  # удалить ввод пользователя
     except Exception:
@@ -220,9 +226,9 @@ async def confirm_getter(dialog_manager: DialogManager, **kwargs):
 text_input_win = Window(
     Const("✈️ Опишите ваш запрос в свободной форме\n\n"
           "Примеры:\n"
-          "• \"С 7 октября по 23 октября из Лондона в Анталию\"\n"
+          "• \"С 7 октября по 23 октября прямой из Лондона в Анталию\"\n"
           "• \"Москва - Дубай 1-10 января, до 30000 рублей\"\n"
-          "• \"Из Стамбула в Париж 15-20 декабря, макс 500 евро\"\n\n"
+          "• \"Из Стамбула в Париж прямой 15-20 декабря, макс 500 евро\"\n\n"
           "Укажите города, диапазон дат вылета и (опционально) бюджет.\n\n"
           "Или нажмите \"Заполнить вручную\" для пошагового ввода."),
     TextInput(id="text_in", on_success=process_text_input),
