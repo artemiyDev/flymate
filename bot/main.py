@@ -20,7 +20,6 @@ async def set_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Онбординг / создать подписку"),
         BotCommand(command="subs", description="Мои подписки"),
-        BotCommand(command="deal", description="Лучшие предложения сейчас"),
         BotCommand(command="help", description="Помощь"),
     ]
     await bot.set_my_commands(commands)
@@ -47,7 +46,13 @@ def build_common_router() -> Router:
             async with session.begin():
                 await UsersRepo.upsert_from_tg(session, message.from_user)
 
-        # запустить диалог
+        # Delete /start command message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Start dialog
         await dialog_manager.start(NewSubSG.text_input, mode=StartMode.RESET_STACK)
 
     @r.message(Command("help"))
@@ -57,11 +62,16 @@ def build_common_router() -> Router:
             "Команды:\n"
             "• /start — создать подписку\n"
             "• /subs — список подписок\n"
-            "• /deal — лучшие предложения"
         )
 
     @r.message(Command("subs"))
     async def cmd_subs(message: Message, dialog_manager: DialogManager):
+        # Delete /subs command message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         await dialog_manager.start(MySubsSG.list, mode=StartMode.RESET_STACK)
 
     @r.message(Command("deal"))

@@ -167,7 +167,8 @@ async def process_subscription(bot: Bot,
     months = month_span(sub.range_from, sub.range_to)
     logger.debug(f"Подписка #{sub.id}: будет проверено месяцев: {len(months)} ({', '.join(months)})")
 
-    total_sent = 0  # счётчик отправленных уведомлений
+    total_sent = 0  # счётчик отправленных сообщений
+    notifications_to_send = []  # список уведомлений для отправки
 
     for mon in months:
         try:
@@ -246,7 +247,7 @@ async def process_subscription(bot: Bot,
                                  f"({new_price} >= {old_price}), пропускаем")
 
             if should_notify:
-                # Формируем и отправляем уведомление
+                # Формируем данные для уведомления
                 airline = min_offer.get("airline")
                 transfers = min_offer.get("transfers")
                 duration = min_offer.get("duration")
@@ -256,24 +257,65 @@ async def process_subscription(bot: Bot,
                 link = build_deeplink(min_offer.get("link"))
                 search_link = build_search_url(origin, destination, dep)
 
-                dt = dtparse.isoparse(dep)
+                # Собираем данные уведомления
+                notifications_to_send.append({
+                    "offer": min_offer,
+                    "new_price": new_price,
+                    "old_price": old_price,
+                    "tracking_key": tracking_key,
+                    "airline": airline,
+                    "transfers": transfers,
+                    "duration": duration,
+                    "origin": origin,
+                    "destination": destination,
+                    "dep": dep,
+                    "link": link,
+                    "search_link": search_link,
+                })
+
+                logger.info(f"📋 Подписка #{sub.id}: добавлено уведомление в очередь (всего: {len(notifications_to_send)})")
+
+                # Ограничение: не более 10 уведомлений за один запуск
+                if len(notifications_to_send) >= 10:
+                    logger.warning(f"Подписка #{sub.id}: достигнут лимит 10 уведомлений, "
+                                   f"остальные направления будут проверены в следующий раз")
+                    break
+
+        # Если достигли лимита, выходим из цикла по месяцам
+        if len(notifications_to_send) >= 10:
+            break
+
+    # Отправляем собранные уведомления группами по 5
+    if notifications_to_send:
+        logger.info(f"📤 Подписка #{sub.id}: начинаем отправку {len(notifications_to_send)} уведомлений группами по 5")
+
+        # Разбиваем на группы по 5
+        batch_size = 5
+        for i in range(0, len(notifications_to_send), batch_size):
+            batch = notifications_to_send[i:i + batch_size]
+
+            # Формируем объединённое сообщение
+            message_parts = []
+            for idx, notif in enumerate(batch, 1):
+                dt = dtparse.isoparse(notif["dep"])
                 dt_txt = dt.strftime("%d.%m %H:%M")
-                transfers_txt = "Прямой" if transfers == 0 else f"{transfers} пересадка" if transfers == 1 else f"{transfers} пересадки"
-                dur_txt = human_duration(duration or 0)
+                transfers_txt = "Прямой" if notif["transfers"] == 0 else f"{notif['transfers']} пересадка" if notif["transfers"] == 1 else f"{notif['transfers']} пересадки"
+                dur_txt = human_duration(notif["duration"] or 0)
 
                 lines = [
-                    f"🛫 <b>{origin} → {destination}</b>",
+                    f"{'—' * 25}",
+                    f"🛫 <b>{notif['origin']} → {notif['destination']}</b>",
                     f"📅 {dt_txt}",
-                    f"💺 {airline or 'Авиакомпания не указана'}",
-                    f"💰 <b>{new_price} {sub.currency}</b>",
+                    f"💺 {notif['airline'] or 'Авиакомпания не указана'}",
+                    f"💰 <b>{notif['new_price']} {sub.currency}</b>",
                 ]
 
                 # Добавляем информацию о снижении цены
-                if old_price is not None:
-                    savings = old_price - new_price
-                    savings_percent = (savings / old_price) * 100
+                if notif["old_price"] is not None:
+                    savings = notif["old_price"] - notif["new_price"]
+                    savings_percent = (savings / notif["old_price"]) * 100
                     lines.append(f"📉 <b>-{savings:.2f} {sub.currency} (-{savings_percent:.1f}%)</b>")
-                    lines.append(f"   Было: {old_price} {sub.currency}")
+                    lines.append(f"   Было: {notif['old_price']} {sub.currency}")
                 else:
                     lines.append("🆕 <b>Новое направление!</b>")
 
@@ -282,43 +324,40 @@ async def process_subscription(bot: Bot,
                     f"🕒 {dur_txt}",
                 ])
 
-                if link:
-                    lines.append(f'<a href="{link}">🔗 Купить билет</a>')
-                if search_link:
-                    lines.append(f'<a href="{search_link}">🔎 Найти похожие</a>')
+                if notif["link"]:
+                    lines.append(f'<a href="{notif["link"]}">🔗 Купить билет</a>')
+                if notif["search_link"]:
+                    lines.append(f'<a href="{notif["search_link"]}">🔎 Найти похожие</a>')
 
-                text = "\n".join(lines)
+                message_parts.append("\n".join(lines))
 
-                try:
-                    await bot.send_message(
-                        chat_id=sub.user_id,
-                        text=text,
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    )
-                    total_sent += 1
-                    logger.info(f"✉️ Подписка #{sub.id}: уведомление отправлено пользователю {sub.user_id}")
+            # Объединяем все части в одно сообщение
+            text = "\n".join(message_parts)
 
-                    # Обновляем минимальную цену в Redis
-                    await rds.set(tracking_key, str(new_price))
+            # Добавляем заголовок для группы
+            header = f"🎯 <b>Найдено предложений: {len(batch)}</b>\n"
+            text = header + text
+
+            try:
+                await bot.send_message(
+                    chat_id=sub.user_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+                total_sent += 1
+                logger.info(f"✉️ Подписка #{sub.id}: отправлено сообщение #{total_sent} с {len(batch)} предложениями пользователю {sub.user_id}")
+
+                # Обновляем минимальные цены в Redis для всех предложений в группе
+                for notif in batch:
+                    await rds.set(notif["tracking_key"], str(notif["new_price"]))
                     # TTL 90 дней (с запасом больше возможного диапазона подписки)
-                    await rds.expire(tracking_key, 90 * 24 * 60 * 60)
+                    await rds.expire(notif["tracking_key"], 90 * 24 * 60 * 60)
 
-                except Exception as e:
-                    logger.error(f"Подписка #{sub.id}: ошибка отправки уведомления: {e}")
+            except Exception as e:
+                logger.error(f"Подписка #{sub.id}: ошибка отправки сообщения: {e}")
 
-                # Ограничение: не более 10 уведомлений за один запуск
-                if total_sent >= 10:
-                    logger.warning(f"Подписка #{sub.id}: достигнут лимит 10 уведомлений, "
-                                   f"остальные направления будут проверены в следующий раз")
-                    break
-
-        # Если достигли лимита, выходим из цикла по месяцам
-        if total_sent >= 10:
-            break
-
-    if total_sent > 0:
-        logger.info(f"✅ Подписка #{sub.id}: отправлено уведомлений: {total_sent}")
+        logger.info(f"✅ Подписка #{sub.id}: отправлено сообщений: {total_sent} ({len(notifications_to_send)} предложений)")
     else:
         logger.info(f"ℹ️ Подписка #{sub.id}: новых снижений цен не найдено")
 

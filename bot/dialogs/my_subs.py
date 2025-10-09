@@ -98,6 +98,12 @@ async def on_delete_confirm(c: CallbackQuery, b: Button, manager: DialogManager)
     else:
         await c.answer("Не удалось удалить подписку", show_alert=True)
 
+    # Delete confirmation message
+    try:
+        await c.message.delete()
+    except Exception:
+        pass
+
     manager.show_mode = ShowMode.EDIT
     await manager.switch_to(MySubsSG.list)
 
@@ -106,6 +112,16 @@ async def on_cancel_delete(c: CallbackQuery, b: Button, manager: DialogManager):
     """Cancel deletion."""
     manager.show_mode = ShowMode.EDIT
     await manager.switch_to(MySubsSG.list)
+
+
+async def on_close_dialog(c: CallbackQuery, b: Button, manager: DialogManager):
+    """Close dialog and delete message."""
+    try:
+        await c.message.delete()
+    except Exception:
+        pass
+
+    await manager.done()
 
 
 # --- getters ---
@@ -196,7 +212,7 @@ list_win = Window(
         when="has_subs",
     ),
     Const("\nУ вас пока нет подписок.\nИспользуйте /start чтобы создать подписку.", when=lambda data, w, m: not data.get("has_subs")),
-    Cancel(Const("Закрыть")),
+    Button(Const("Закрыть"), id="close", on_click=on_close_dialog),
     state=MySubsSG.list,
     getter=subs_list_getter,
 )
