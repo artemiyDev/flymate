@@ -30,10 +30,16 @@ class NewSubSG(StatesGroup):
 async def process_text_input(m: Message, w, manager: DialogManager, value: str):
     """Обрабатывает свободный текстовый ввод через GPT."""
     # Показываем пользователю, что идёт обработка
-    await m.answer("⏳ Обрабатываю запрос...")
+    processing_msg = await m.answer("⏳ Обрабатываю запрос...")
 
     # Парсим через GPT
     parsed = await parse_text_request(value)
+
+    # Удаляем сообщение об обработке
+    try:
+        await processing_msg.delete()
+    except Exception:
+        pass
 
     if not parsed:
         await m.answer(
@@ -212,12 +218,16 @@ async def confirm_getter(dialog_manager: DialogManager, **kwargs):
         currency = dialog_manager.dialog_data.get("currency", "RUB")
         price_text = f"≤ {max_price} {currency}"
 
+    direct = dialog_manager.dialog_data.get("direct", False)
+    direct_text = "Да" if direct else "Нет"
+
     return {
         "origin": dialog_manager.dialog_data.get("origin", "—"),
         "destination": dialog_manager.dialog_data.get("destination", "—"),
         "date_from": dialog_manager.dialog_data.get("date_from", "—"),
         "date_to": dialog_manager.dialog_data.get("date_to", "—"),
         "price_display": price_text,
+        "direct_display": direct_text,
     }
 
 
@@ -296,7 +306,8 @@ confirm_win = Window(
         "От: {origin}\n"
         "До: {destination}\n"
         "Даты вылета: {date_from} → {date_to}\n"
-        "Бюджет: {price_display}"
+        "Бюджет: {price_display}\n"
+        "Только прямые рейсы: {direct_display}"
     ),
     Button(Const("✅ Сохранить"), id="save", on_click=on_save),
     Back(Const("Назад")),

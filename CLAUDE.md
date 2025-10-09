@@ -135,3 +135,6 @@ flymate/
 - Добавь `print()` в `process_subscription()` для логирования запросов к API
 - Проверь Redis через `redis-cli` (ключи вида `subs:{id}:sent`)
 - Уменьши `check_interval_minutes` в БД для тестирования
+
+
+Все комментарии пиши на английском языке
