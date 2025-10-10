@@ -11,6 +11,7 @@ from aiogram.filters import Command
 from aiogram_dialog import setup_dialogs, StartMode, DialogManager
 
 from bot.db.repo_users import UsersRepo
+from bot.middlewares.messages import AutoDeleteMiddleware
 from settings import Settings
 from dialogs.new_sub import new_sub_dialog, NewSubSG
 from dialogs.my_subs import my_subs_dialog, MySubsSG
@@ -90,6 +91,7 @@ async def main():
     bot = Bot(token=settings.TG_TOKEN)
     dp = Dispatcher()
 
+    dp.message.middleware(AutoDeleteMiddleware())
 
     # Роутеры: сначала обычные, потом диалоги
     dp.include_router(build_common_router())
