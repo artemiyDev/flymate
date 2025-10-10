@@ -9,6 +9,14 @@ from aiogram_dialog.api.entities.modes import ShowMode
 
 from bot.db.engine import get_sessionmaker
 from bot.db.repo_subscriptions import SubscriptionsRepo
+from bot.db.redis_client import get_airport_name
+
+# Import MainMenuSG for returning to main menu
+# Note: we use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING
+from aiogram_dialog.api.entities.modes import StartMode
+if TYPE_CHECKING:
+    from dialogs.main_menu import MainMenuSG
 
 
 class MySubsSG(StatesGroup):
@@ -115,13 +123,17 @@ async def on_cancel_delete(c: CallbackQuery, b: Button, manager: DialogManager):
 
 
 async def on_close_dialog(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Close dialog and delete message."""
+    """Close dialog and return to main menu."""
+    # Import here to avoid circular import
+    from dialogs.main_menu import MainMenuSG
+
     try:
         await c.message.delete()
     except Exception:
         pass
 
-    await manager.done()
+    # Return to main menu
+    await manager.start(MainMenuSG.menu, mode=StartMode.RESET_STACK)
 
 
 # --- getters ---
@@ -143,12 +155,20 @@ async def subs_list_getter(dialog_manager: DialogManager, **kwargs):
 
     subs_data = []
     for sub in subs:
+        # Get human-readable names from Redis
+        origin_name = await get_airport_name(sub.origin)
+        destination_name = await get_airport_name(sub.destination)
+
+        # Format route display: "City (CODE)"
+        origin_display = f"{origin_name} ({sub.origin})" if origin_name != sub.origin else sub.origin
+        destination_display = f"{destination_name} ({sub.destination})" if destination_name != sub.destination else sub.destination
+
         # Format data for display
         price_text = "без ограничения" if sub.max_price >= 999999999 else f"до {int(sub.max_price)} {sub.currency}"
 
         subs_data.append({
             "id": str(sub.id),  # Convert to string for item_id_getter
-            "text": f"{sub.origin} → {sub.destination} | {sub.range_from.strftime('%d.%m')}—{sub.range_to.strftime('%d.%m')} | {price_text}",
+            "text": f"{origin_display} → {destination_display} | {sub.range_from.strftime('%d.%m')}—{sub.range_to.strftime('%d.%m')} | {price_text}",
         })
 
     return {
@@ -177,11 +197,19 @@ async def selected_sub_getter(dialog_manager: DialogManager, **kwargs):
             "currency": "RUB",
         }
 
+    # Get human-readable names from Redis
+    origin_name = await get_airport_name(selected_sub.origin)
+    destination_name = await get_airport_name(selected_sub.destination)
+
+    # Format route display: "City (CODE)"
+    origin_display = f"{origin_name} ({selected_sub.origin})" if origin_name != selected_sub.origin else selected_sub.origin
+    destination_display = f"{destination_name} ({selected_sub.destination})" if destination_name != selected_sub.destination else selected_sub.destination
+
     price_text = "без ограничения" if selected_sub.max_price >= 999999999 else f"до {int(selected_sub.max_price)} {selected_sub.currency}"
 
     return {
-        "origin": selected_sub.origin,
-        "destination": selected_sub.destination,
+        "origin": origin_display,
+        "destination": destination_display,
         "date_range": f"{selected_sub.range_from.strftime('%d.%m.%Y')} — {selected_sub.range_to.strftime('%d.%m.%Y')}",
         "price": price_text,
         "currency": selected_sub.currency,

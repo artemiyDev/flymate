@@ -163,5 +163,5 @@ cython_debug/
 #.idea/
 
 db/
-local_test/
+local_utils/
 .idea
