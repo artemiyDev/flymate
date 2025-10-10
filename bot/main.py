@@ -1,7 +1,10 @@
 # bot/main.py
 import asyncio
 import logging
+import os
+import redis
 
+from sqlalchemy import text
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import BotCommand, Message
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -15,11 +18,13 @@ from bot.middlewares.messages import AutoDeleteMiddleware
 from settings import Settings
 from dialogs.new_sub import new_sub_dialog, NewSubSG
 from dialogs.my_subs import my_subs_dialog, MySubsSG
+from dialogs.main_menu import main_menu_dialog, MainMenuSG
 from db.engine import init_db_engine, get_sessionmaker
+from db.redis_client import init_redis_client, get_redis_client, close_redis_client
 
 async def set_bot_commands(bot: Bot):
     commands = [
-        BotCommand(command="start", description="Онбординг / создать подписку"),
+        BotCommand(command="start", description="Главное меню"),
         BotCommand(command="subs", description="Мои подписки"),
         BotCommand(command="help", description="Помощь"),
     ]
@@ -53,8 +58,8 @@ def build_common_router() -> Router:
         except Exception:
             pass
 
-        # Start dialog
-        await dialog_manager.start(NewSubSG.text_input, mode=StartMode.RESET_STACK)
+        # Start main menu dialog
+        await dialog_manager.start(MainMenuSG.menu, mode=StartMode.RESET_STACK)
 
     @r.message(Command("help"))
     async def cmd_help(message):
@@ -82,30 +87,132 @@ def build_common_router() -> Router:
     return r
 
 
+async def load_redis_cache():
+    """Load data into Redis before bot starts"""
+
+    print("=" * 60)
+    print("Loading data into Redis...")
+    print("=" * 60)
+
+    # Use global Redis client
+    r = get_redis_client()
+
+    try:
+        # Test connection
+        await r.ping()
+        print("✓ Redis connection established")
+    except Exception as e:
+        print(f"✗ Redis connection error: {e}")
+        return False
+
+    try:
+        # Clear old data
+        print("\nClearing old data...")
+        for pattern in ["airline:*", "airport:*", "city:*"]:
+            keys = await r.keys(pattern)
+            if keys:
+                await r.delete(*keys)
+        print("✓ Old data cleared")
+
+        # Get sessionmaker
+        Session = get_sessionmaker()
+
+        # Load airlines
+        print("\nLoading airlines...")
+        async with Session() as session:
+            result = await session.execute(
+                text("SELECT code, name_en FROM airline_codes WHERE name_en IS NOT NULL")
+            )
+            airlines = result.fetchall()
+
+            # Use pipeline for better performance
+            async with r.pipeline() as pipe:
+                for code, name_en in airlines:
+                    if code and name_en:
+                        await pipe.set(f"airline:{code}", name_en)
+                await pipe.execute()
+
+        print(f"✓ Loaded {len(airlines)} airlines")
+
+        # Load airports
+        print("\nLoading airports...")
+        async with Session() as session:
+            result = await session.execute(
+                text("SELECT code, name_en FROM airport_codes WHERE name_en IS NOT NULL")
+            )
+            airports = result.fetchall()
+
+            async with r.pipeline() as pipe:
+                for code, name_en in airports:
+                    if code and name_en:
+                        await pipe.set(f"airport:{code}", name_en)
+                await pipe.execute()
+
+        print(f"✓ Loaded {len(airports)} airports")
+
+        # Load cities
+        print("\nLoading cities...")
+        async with Session() as session:
+            result = await session.execute(
+                text("SELECT code, name_en FROM city_codes WHERE name_en IS NOT NULL")
+            )
+            cities = result.fetchall()
+
+            async with r.pipeline() as pipe:
+                for code, name_en in cities:
+                    if code and name_en:
+                        await pipe.set(f"city:{code}", name_en)
+                await pipe.execute()
+
+        print(f"✓ Loaded {len(cities)} cities")
+
+        print("\n" + "=" * 60)
+        print("✓ Redis cache loaded successfully!")
+        print("=" * 60 + "\n")
+
+        return True
+
+    except Exception as e:
+        print(f"\n✗ Error loading data: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 async def main():
     logging.basicConfig(level=logging.INFO)
 
     settings = Settings()
     init_db_engine()
+    init_redis_client()
+
+    # Load Redis cache before starting bot
+    cache_loaded = await load_redis_cache()
+    if not cache_loaded:
+        print("Warning: Redis cache failed to load, continuing anyway...")
 
     bot = Bot(token=settings.TG_TOKEN)
     dp = Dispatcher()
 
     dp.message.middleware(AutoDeleteMiddleware())
 
-    # Роутеры: сначала обычные, потом диалоги
+    # Routers: common handlers first, then dialogs
     dp.include_router(build_common_router())
+    dp.include_router(main_menu_dialog)
     dp.include_router(new_sub_dialog)
     dp.include_router(my_subs_dialog)
 
-    # Включаем поддержку aiogram-dialog v2
+    # Enable aiogram-dialog v2 support
     setup_dialogs(dp)
 
     await set_bot_commands(bot)
 
-    # Если у тебя есть APScheduler — поднимай его тут (асинхронно) до старта polling
-
-    await dp.start_polling(bot)
+    try:
+        # Start polling
+        await dp.start_polling(bot)
+    finally:
+        # Cleanup on shutdown
+        await close_redis_client()
+        logging.info("Redis client closed")
 
 
 if __name__ == "__main__":

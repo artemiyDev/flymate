@@ -113,6 +113,46 @@ def build_search_url(origin: str, destination: str, departure_at: str) -> str:
     return f"https://www.aviasales.com/search/{origin}{day}{month}{destination}21"
 
 
+async def get_airport_name(rds: Redis, iata_code: str) -> str:
+    """
+    Get airport name from Redis cache by IATA code.
+    Falls back to IATA code if not found.
+    """
+    if not iata_code:
+        return "Unknown"
+
+    # Try airport first
+    airport_name = await rds.get(f"airport:{iata_code.upper()}")
+    if airport_name:
+        return airport_name
+
+    # Try city as fallback
+    city_name = await rds.get(f"city:{iata_code.upper()}")
+    if city_name:
+        return city_name
+
+    # Fallback to IATA code
+    return iata_code.upper()
+
+
+async def get_airline_name(rds: Redis, iata_code: str) -> str:
+    """
+    Get airline name from Redis cache by IATA code.
+    Falls back to IATA code if not found.
+    """
+    if not iata_code:
+        return "Unknown airline"
+
+    airline_name = await rds.get(f"airline:{iata_code.upper()}")
+    if airline_name:
+        return airline_name
+
+    # Fallback to IATA code
+    return iata_code.upper()
+
+
+
+
 async def fetch_prices_for_month(session_http: aiohttp.ClientSession,
                                  base_url: str,
                                  token: str,
@@ -273,7 +313,8 @@ async def process_subscription(bot: Bot,
                     "search_link": search_link,
                 })
 
-                logger.info(f"📋 Подписка #{sub.id}: добавлено уведомление в очередь (всего: {len(notifications_to_send)})")
+                logger.info(
+                    f"📋 Подписка #{sub.id}: добавлено уведомление в очередь (всего: {len(notifications_to_send)})")
 
                 # Ограничение: не более 10 уведомлений за один запуск
                 if len(notifications_to_send) >= 10:
@@ -299,14 +340,24 @@ async def process_subscription(bot: Bot,
             for idx, notif in enumerate(batch, 1):
                 dt = dtparse.isoparse(notif["dep"])
                 dt_txt = dt.strftime("%d.%m %H:%M")
-                transfers_txt = "Прямой" if notif["transfers"] == 0 else f"{notif['transfers']} пересадка" if notif["transfers"] == 1 else f"{notif['transfers']} пересадки"
+                transfers_txt = "Прямой" if notif["transfers"] == 0 else f"{notif['transfers']} пересадка" if notif[
+                                                                                                                  "transfers"] == 1 else f"{notif['transfers']} пересадки"
                 dur_txt = human_duration(notif["duration"] or 0)
+
+                # Get human-readable names from Redis
+                origin_name = await get_airport_name(rds, notif['origin'])
+                destination_name = await get_airport_name(rds, notif['destination'])
+                airline_name = await get_airline_name(rds, notif['airline'])
+
+                # Format route display: "City Name (CODE)"
+                origin_display = f"{origin_name} ({notif['origin']})" if origin_name != notif['origin'] else notif['origin']
+                destination_display = f"{destination_name} ({notif['destination']})" if destination_name != notif['destination'] else notif['destination']
 
                 lines = [
                     f"{'—' * 25}",
-                    f"🛫 <b>{notif['origin']} → {notif['destination']}</b>",
+                    f"🛫 <b>{origin_display} → {destination_display}</b>",
                     f"📅 {dt_txt}",
-                    f"💺 {notif['airline'] or 'Авиакомпания не указана'}",
+                    f"💺 {airline_name}",
                     f"💰 <b>{notif['new_price']} {sub.currency}</b>",
                 ]
 
@@ -334,10 +385,6 @@ async def process_subscription(bot: Bot,
             # Объединяем все части в одно сообщение
             text = "\n".join(message_parts)
 
-            # Добавляем заголовок для группы
-            header = f"🎯 <b>Найдено предложений: {len(batch)}</b>\n"
-            text = header + text
-
             try:
                 await bot.send_message(
                     chat_id=sub.user_id,
@@ -346,7 +393,8 @@ async def process_subscription(bot: Bot,
                     disable_web_page_preview=True
                 )
                 total_sent += 1
-                logger.info(f"✉️ Подписка #{sub.id}: отправлено сообщение #{total_sent} с {len(batch)} предложениями пользователю {sub.user_id}")
+                logger.info(
+                    f"✉️ Подписка #{sub.id}: отправлено сообщение #{total_sent} с {len(batch)} предложениями пользователю {sub.user_id}")
 
                 # Обновляем минимальные цены в Redis для всех предложений в группе
                 for notif in batch:
@@ -357,7 +405,8 @@ async def process_subscription(bot: Bot,
             except Exception as e:
                 logger.error(f"Подписка #{sub.id}: ошибка отправки сообщения: {e}")
 
-        logger.info(f"✅ Подписка #{sub.id}: отправлено сообщений: {total_sent} ({len(notifications_to_send)} предложений)")
+        logger.info(
+            f"✅ Подписка #{sub.id}: отправлено сообщений: {total_sent} ({len(notifications_to_send)} предложений)")
     else:
         logger.info(f"ℹ️ Подписка #{sub.id}: новых снижений цен не найдено")
 
@@ -382,7 +431,7 @@ async def loop_worker():
     Session = get_sessionmaker()
     logger.info("БД подключена успешно")
 
-    # init Redis
+    # init Redis (worker has its own connection, separate from bot)
     logger.info(f"Подключение к Redis {settings.REDIS_HOST}:{settings.REDIS_PORT}...")
     rds = Redis(
         host=settings.REDIS_HOST,
