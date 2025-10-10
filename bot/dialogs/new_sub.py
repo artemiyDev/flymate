@@ -74,7 +74,7 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
         pass
 
     # Delete and send new message instead of editing
-    manager.show_mode = ShowMode.DELETE_AND_SEND
+    manager.show_mode = ShowMode.EDIT
 
     # Set default values if not specified
     if "currency" not in manager.dialog_data:
@@ -89,7 +89,7 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
 async def on_manual_fill(c: CallbackQuery, b: Button, manager: DialogManager):
     """Handle 'Fill manually' button click."""
     # Delete and send new message instead of editing
-    manager.show_mode = ShowMode.DELETE_AND_SEND
+    manager.show_mode = ShowMode.EDIT
     await manager.next()
 
 
