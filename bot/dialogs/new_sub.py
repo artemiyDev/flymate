@@ -13,12 +13,7 @@ from aiogram_dialog.api.entities.modes import ShowMode, StartMode
 from bot.db.engine import get_sessionmaker
 from bot.db.repo_subscriptions import SubscriptionsRepo
 from bot.gpt_parser import parse_text_request
-
-# Import MainMenuSG for returning to main menu
-# Note: we use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from dialogs.main_menu import MainMenuSG
+from bot.keyboards.reply import get_main_keyboard  # Only used in on_save
 
 class NewSubSG(StatesGroup):
     text_input = State()
@@ -100,18 +95,15 @@ async def on_manual_fill(c: CallbackQuery, b: Button, manager: DialogManager):
 
 
 async def on_cancel_dialog(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Handle cancel button - delete message and return to main menu."""
-    # Import here to avoid circular import
-    from dialogs.main_menu import MainMenuSG
-
+    """Handle cancel button - delete message and close dialog."""
     # Delete dialog message
     try:
         await c.message.delete()
     except Exception:
         pass
 
-    # Return to main menu
-    await manager.start(MainMenuSG.menu, mode=StartMode.RESET_STACK)
+    # Close dialog (ReplyKeyboard remains visible)
+    await manager.done()
 
 
 async def set_origin(m, w, manager, value: str):
@@ -190,9 +182,6 @@ async def set_budget(m, w, manager, value: str):
 
 
 async def on_save(c: CallbackQuery, b: Button, manager: DialogManager):
-    # Import here to avoid circular import
-    from dialogs.main_menu import MainMenuSG
-
     data = manager.dialog_data
     # Minimal validation of required fields
     if not all(k in data for k in ("origin", "destination", "date_from", "date_to", "currency")):
@@ -233,8 +222,16 @@ async def on_save(c: CallbackQuery, b: Button, manager: DialogManager):
     except Exception:
         pass
 
-    # Return to main menu
-    await manager.start(MainMenuSG.menu, mode=StartMode.RESET_STACK)
+    # Close dialog
+    await manager.done()
+
+    # Show success message with ReplyKeyboard
+    await c.message.answer(
+        "✅ Подписка успешно создана!\n\n"
+        "Я буду проверять цены каждые 5 минут и пришлю уведомление, "
+        "как только найду подходящий вариант.",
+        reply_markup=get_main_keyboard(),
+    )
 
 
 # --- getters for Format ---
