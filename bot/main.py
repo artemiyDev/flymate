@@ -15,10 +15,10 @@ from aiogram_dialog import setup_dialogs, StartMode, DialogManager
 
 from bot.db.repo_users import UsersRepo
 from bot.middlewares.messages import AutoDeleteMiddleware
+from bot.keyboards.reply import get_main_keyboard
 from settings import Settings
 from dialogs.new_sub import new_sub_dialog, NewSubSG
 from dialogs.my_subs import my_subs_dialog, MySubsSG
-from dialogs.main_menu import main_menu_dialog, MainMenuSG
 from db.engine import init_db_engine, get_sessionmaker
 from db.redis_client import init_redis_client, get_redis_client, close_redis_client
 
@@ -58,8 +58,20 @@ def build_common_router() -> Router:
         except Exception:
             pass
 
-        # Start main menu dialog
-        await dialog_manager.start(MainMenuSG.menu, mode=StartMode.RESET_STACK)
+        # Close all active dialogs
+        await dialog_manager.reset_stack()
+
+        # Show welcome message with persistent ReplyKeyboard
+        await message.answer(
+            "✈️ Flymate — ваш помощник в поиске дешёвых авиабилетов\n\n"
+            "Я помогу вам отслеживать цены на интересующие маршруты и сообщу, "
+            "когда появятся выгодные предложения!\n\n"
+            "Создайте подписку на нужный маршрут, укажите даты и бюджет — "
+            "я буду проверять цены каждые 5 минут и пришлю уведомление, "
+            "как только найду подходящий вариант.\n\n"
+            "Выберите действие:",
+            reply_markup=get_main_keyboard(),
+        )
 
     @r.message(Command("help"))
     async def cmd_help(message):
@@ -83,6 +95,29 @@ def build_common_router() -> Router:
     @r.message(Command("deal"))
     async def cmd_deal(message):
         await message.answer("Лучшие предложения появятся позже 👷")
+
+    # Handlers for ReplyKeyboard buttons
+    @r.message(F.text == "➕ Создать подписку")
+    async def on_create_subscription_btn(message: Message, dialog_manager: DialogManager):
+        # Delete button message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Close all active dialogs and start new subscription dialog
+        await dialog_manager.start(NewSubSG.text_input, mode=StartMode.RESET_STACK)
+
+    @r.message(F.text == "📋 Мои подписки")
+    async def on_my_subscriptions_btn(message: Message, dialog_manager: DialogManager):
+        # Delete button message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Close all active dialogs and start my subscriptions dialog
+        await dialog_manager.start(MySubsSG.list, mode=StartMode.RESET_STACK)
 
     return r
 
@@ -197,7 +232,6 @@ async def main():
 
     # Routers: common handlers first, then dialogs
     dp.include_router(build_common_router())
-    dp.include_router(main_menu_dialog)
     dp.include_router(new_sub_dialog)
     dp.include_router(my_subs_dialog)
 

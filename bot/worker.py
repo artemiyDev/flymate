@@ -275,12 +275,21 @@ async def process_subscription(bot: Bot,
             else:
                 old_price = float(stored_min)
                 if new_price < old_price:
-                    # Цена снизилась!
+                    # Цена снизилась! Проверяем значимость изменения
                     savings = old_price - new_price
-                    logger.info(f"📉 Подписка #{sub.id}: снижение цены для {date_str}: "
-                                f"{old_price} → {new_price} {sub.currency} "
-                                f"(экономия: {savings:.2f})")
-                    should_notify = True
+                    price_change_percent = (savings / old_price) * 100
+
+                    if price_change_percent >= 2.0:
+                        # Значимое снижение (>=2%)
+                        logger.info(f"📉 Подписка #{sub.id}: значимое снижение цены для {date_str}: "
+                                    f"{old_price} → {new_price} {sub.currency} "
+                                    f"(экономия: {savings:.2f}, -{price_change_percent:.1f}%)")
+                        should_notify = True
+                    else:
+                        # Незначительное снижение (<2%)
+                        logger.debug(f"Подписка #{sub.id}: незначительное снижение цены для {date_str}: "
+                                     f"{old_price} → {new_price} {sub.currency} "
+                                     f"(-{price_change_percent:.1f}% < 2%), пропускаем")
                 else:
                     # Цена не изменилась или выросла
                     logger.debug(f"Подписка #{sub.id}: цена для {date_str} не снизилась "

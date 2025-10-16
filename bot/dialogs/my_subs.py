@@ -11,12 +11,7 @@ from bot.db.engine import get_sessionmaker
 from bot.db.repo_subscriptions import SubscriptionsRepo
 from bot.db.redis_client import get_airport_name
 
-# Import MainMenuSG for returning to main menu
-# Note: we use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
 from aiogram_dialog.api.entities.modes import StartMode
-if TYPE_CHECKING:
-    from dialogs.main_menu import MainMenuSG
 
 
 class MySubsSG(StatesGroup):
@@ -123,17 +118,14 @@ async def on_cancel_delete(c: CallbackQuery, b: Button, manager: DialogManager):
 
 
 async def on_close_dialog(c: CallbackQuery, b: Button, manager: DialogManager):
-    """Close dialog and return to main menu."""
-    # Import here to avoid circular import
-    from dialogs.main_menu import MainMenuSG
-
+    """Close dialog and delete message."""
     try:
         await c.message.delete()
     except Exception:
         pass
 
-    # Return to main menu
-    await manager.start(MainMenuSG.menu, mode=StartMode.RESET_STACK)
+    # Close dialog (ReplyKeyboard remains visible)
+    await manager.done()
 
 
 # --- getters ---
