@@ -363,7 +363,6 @@ async def process_subscription(bot: Bot,
                 destination_display = f"{destination_name} ({notif['destination']})" if destination_name != notif['destination'] else notif['destination']
 
                 lines = [
-                    f"{'—' * 25}",
                     f"🛫 <b>{origin_display} → {destination_display}</b>",
                     f"📅 {dt_txt}",
                     f"💺 {airline_name}",
