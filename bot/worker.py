@@ -10,6 +10,7 @@ from typing import Any
 
 import aiohttp
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dateutil import parser as dtparse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -431,12 +432,25 @@ async def process_subscription(bot: Bot,
             # Объединяем все части в одно сообщение
             text = "\n".join(message_parts)
 
+            # Create inline keyboard with disable button
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔕 Отключить эту подписку",
+                            callback_data=f"disable_sub:{sub.id}"
+                        )
+                    ]
+                ]
+            )
+
             try:
                 await bot.send_message(
                     chat_id=sub.user_id,
                     text=text,
                     parse_mode="HTML",
-                    disable_web_page_preview=True
+                    disable_web_page_preview=True,
+                    reply_markup=keyboard
                 )
                 total_sent += 1
                 logger.info(

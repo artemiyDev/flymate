@@ -16,6 +16,7 @@ from aiogram_dialog import setup_dialogs, StartMode, DialogManager
 from bot.db.repo_users import UsersRepo
 from bot.middlewares.messages import AutoDeleteMiddleware
 from bot.keyboards.reply import get_main_keyboard
+from bot.callbacks import build_callbacks_router
 from settings import Settings
 from dialogs.new_sub import new_sub_dialog, NewSubSG
 from dialogs.my_subs import my_subs_dialog, MySubsSG
@@ -230,8 +231,9 @@ async def main():
 
     dp.message.middleware(AutoDeleteMiddleware())
 
-    # Routers: common handlers first, then dialogs
+    # Routers: common handlers first, then callbacks, then dialogs
     dp.include_router(build_common_router())
+    dp.include_router(build_callbacks_router())
     dp.include_router(new_sub_dialog)
     dp.include_router(my_subs_dialog)
 
