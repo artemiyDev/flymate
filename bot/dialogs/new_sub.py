@@ -21,6 +21,7 @@ class NewSubSG(StatesGroup):
     destination = State()
     depart_cal = State()
     return_cal = State()
+    direct_flights = State()  # NEW: ask if user wants direct flights only
     budget = State()
     currency = State()
     confirm = State()
@@ -62,12 +63,8 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
         manager.dialog_data["currency"] = parsed.get("currency", "").upper()
     if "max_price" in parsed:
         manager.dialog_data["max_price"] = parsed.get("max_price")
-
     if "direct" in parsed:
-        manager.dialog_data["max_price"] = parsed.get("max_price")
-
-    direct = parsed.get("direct", False)
-    manager.dialog_data["direct"] = direct
+        manager.dialog_data["direct"] = parsed.get("direct")
 
     try:
         await m.delete()  # Delete user input
@@ -77,13 +74,27 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
     # Delete and send new message instead of editing
     manager.show_mode = ShowMode.EDIT
 
-    # Set default values if not specified
-    if "currency" not in manager.dialog_data:
-        manager.dialog_data["currency"] = "RUB"
-    if "max_price" not in manager.dialog_data:
-        manager.dialog_data["max_price"] = None
+    # Check what information is missing and navigate accordingly
+    has_direct = "direct" in manager.dialog_data
+    has_currency = "currency" in manager.dialog_data
+    has_max_price = "max_price" in manager.dialog_data
 
-    # Navigate to confirmation (all data is already present or set to defaults)
+    # If direct flights preference is not specified, ask user
+    if not has_direct:
+        await manager.switch_to(NewSubSG.direct_flights)
+        return
+
+    # If currency is not specified, go to currency selection
+    if not has_currency:
+        await manager.switch_to(NewSubSG.currency)
+        return
+
+    # If max_price is not specified, go to budget input
+    if not has_max_price:
+        await manager.switch_to(NewSubSG.budget)
+        return
+
+    # All data is present, go to confirmation
     await manager.switch_to(NewSubSG.confirm)
 
 
@@ -141,6 +152,18 @@ async def on_return_selected(
     if manager.dialog_data["date_to"] < manager.dialog_data["date_from"]:
         await c.answer("Дата возврата не может быть раньше даты вылета", show_alert=True)
         return
+    await manager.next()
+
+async def choose_direct_yes(c: CallbackQuery, b: Button, manager: DialogManager):
+    """User wants direct flights only."""
+    manager.dialog_data["direct"] = True
+    manager.show_mode = ShowMode.EDIT
+    await manager.next()
+
+async def choose_direct_no(c: CallbackQuery, b: Button, manager: DialogManager):
+    """User accepts flights with transfers."""
+    manager.dialog_data["direct"] = False
+    manager.show_mode = ShowMode.EDIT
     await manager.next()
 
 async def choose_usd(c: CallbackQuery, b: Button, manager: DialogManager):
@@ -319,6 +342,15 @@ return_cal_win = Window(
     getter=return_getter,
 )
 
+direct_flights_win = Window(
+    Const("✈️ Искать только прямые рейсы?"),
+    Button(Const("✅ Да, только прямые"), id="direct_yes", on_click=choose_direct_yes),
+    Button(Const("❌ Нет, можно с пересадками"), id="direct_no", on_click=choose_direct_no),
+    Back(Const("Назад")),
+    Button(Const("Отмена"), id="cancel", on_click=on_cancel_dialog),
+    state=NewSubSG.direct_flights,
+)
+
 currency_win = Window(
     Const("Выбери валюту (или пропусти, будет использован RUB):"),
     Button(Const("💵 USD"), id="cur_usd", on_click=choose_usd),
@@ -363,6 +395,7 @@ new_sub_dialog = Dialog(
     dest_win,
     depart_cal_win,
     return_cal_win,
+    direct_flights_win,
     currency_win,
     budget_win,
     confirm_win,

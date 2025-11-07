@@ -10,6 +10,7 @@ from typing import Any
 
 import aiohttp
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dateutil import parser as dtparse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -200,9 +201,47 @@ async def process_subscription(bot: Bot,
     """
     Обработать одну подписку: дернуть API по месяцам,
     отправить уведомления только при снижении цены.
+    Если диапазон дат подписки уже в прошлом — удалить её с уведомлением.
     """
     logger.info(f"Обработка подписки #{sub.id}: {sub.origin}→{sub.destination}, "
                 f"даты={sub.range_from} - {sub.range_to}, макс.цена={sub.max_price} {sub.currency}")
+
+    # Check if subscription date range is in the past
+    today = date.today()
+    if sub.range_to < today:
+        logger.info(f"Подписка #{sub.id}: диапазон дат истёк (range_to={sub.range_to} < today={today}), удаляем")
+
+        # Get human-readable names for notification
+        origin_name = await get_airport_name(rds, sub.origin)
+        destination_name = await get_airport_name(rds, sub.destination)
+
+        # Format route display
+        origin_display = f"{origin_name} ({sub.origin})" if origin_name != sub.origin else sub.origin
+        destination_display = f"{destination_name} ({sub.destination})" if destination_name != sub.destination else sub.destination
+
+        # Send notification to user
+        notification_text = (
+            f"⏰ <b>Подписка истекла и была автоматически удалена</b>\n\n"
+            f"🛫 {origin_display} → {destination_display}\n"
+            f"📅 Период поиска: {sub.range_from.strftime('%d.%m.%Y')} - {sub.range_to.strftime('%d.%m.%Y')}\n"
+            f"💰 Макс. цена: {sub.max_price} {sub.currency}\n\n"
+            f"Создайте новую подписку через /start, если хотите продолжить мониторинг цен."
+        )
+
+        try:
+            await bot.send_message(
+                chat_id=sub.user_id,
+                text=notification_text,
+                parse_mode="HTML"
+            )
+            logger.info(f"✉️ Подписка #{sub.id}: уведомление об истечении отправлено пользователю {sub.user_id}")
+        except Exception as e:
+            logger.error(f"Подписка #{sub.id}: ошибка отправки уведомления об истечении: {e}")
+
+        # Delete subscription from database
+        await SubscriptionsRepo.delete(session_db, sub.id, sub.user_id)
+        logger.info(f"🗑️ Подписка #{sub.id}: удалена из БД")
+        return
 
     months = month_span(sub.range_from, sub.range_to)
     logger.debug(f"Подписка #{sub.id}: будет проверено месяцев: {len(months)} ({', '.join(months)})")
@@ -363,7 +402,6 @@ async def process_subscription(bot: Bot,
                 destination_display = f"{destination_name} ({notif['destination']})" if destination_name != notif['destination'] else notif['destination']
 
                 lines = [
-                    f"{'—' * 25}",
                     f"🛫 <b>{origin_display} → {destination_display}</b>",
                     f"📅 {dt_txt}",
                     f"💺 {airline_name}",
@@ -394,12 +432,25 @@ async def process_subscription(bot: Bot,
             # Объединяем все части в одно сообщение
             text = "\n".join(message_parts)
 
+            # Create inline keyboard with disable button
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔕 Отключить эту подписку",
+                            callback_data=f"disable_sub:{sub.id}"
+                        )
+                    ]
+                ]
+            )
+
             try:
                 await bot.send_message(
                     chat_id=sub.user_id,
                     text=text,
                     parse_mode="HTML",
-                    disable_web_page_preview=True
+                    disable_web_page_preview=True,
+                    reply_markup=keyboard
                 )
                 total_sent += 1
                 logger.info(
