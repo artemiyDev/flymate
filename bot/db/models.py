@@ -12,7 +12,8 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     first_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_name: Mapped[str | None]  = mapped_column(Text, nullable=True)
-    language_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language_code: Mapped[str | None] = mapped_column(Text, nullable=True)  # From Telegram
+    language: Mapped[str] = mapped_column(CHAR(5), nullable=False, default="ru", server_default="ru")  # User's chosen language
     is_premium: Mapped[bool]   = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     plan: Mapped[str]          = mapped_column(Text, nullable=False, default="basic", server_default="basic")
     subs_active_cnt: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")

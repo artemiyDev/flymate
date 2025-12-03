@@ -94,6 +94,8 @@ pip install aiogram==3.22.0 aiogram-dialog==2.4.0 sqlalchemy asyncpg pydantic-se
 
 6. **Планы пользователей**: модель User содержит поле `plan` ('basic'/'premium'), но функционал лимитов ещё не реализован (заглушка).
 
+7. **Монетизация через Travelpayouts**: все ссылки на покупку билетов содержат партнёрский маркер (settings.TRAVELPAYOUTS_MARKER). Домен выбирается автоматически на основе языка пользователя: `ru` → `aviasales.ru`, `en` → `aviasales.com`. См. MONETIZATION.md для подробностей.
+
 ## Структура директорий
 
 ```

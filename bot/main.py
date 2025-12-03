@@ -6,7 +6,7 @@ import redis
 
 from sqlalchemy import text
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import BotCommand, Message
+from aiogram.types import BotCommand, Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from aiogram import Router
@@ -15,8 +15,10 @@ from aiogram_dialog import setup_dialogs, StartMode, DialogManager
 
 from bot.db.repo_users import UsersRepo
 from bot.middlewares.messages import AutoDeleteMiddleware
+from bot.middlewares.i18n import I18nMiddleware
 from bot.keyboards.reply import get_main_keyboard
 from bot.callbacks import build_callbacks_router
+from bot.i18n import _
 from settings import Settings
 from dialogs.new_sub import new_sub_dialog, NewSubSG
 from dialogs.my_subs import my_subs_dialog, MySubsSG
@@ -24,12 +26,23 @@ from db.engine import init_db_engine, get_sessionmaker
 from db.redis_client import init_redis_client, get_redis_client, close_redis_client
 
 async def set_bot_commands(bot: Bot):
-    commands = [
+    # Russian commands
+    commands_ru = [
         BotCommand(command="start", description="Главное меню"),
         BotCommand(command="subs", description="Мои подписки"),
+        BotCommand(command="language", description="Сменить язык"),
         BotCommand(command="help", description="Помощь"),
     ]
-    await bot.set_my_commands(commands)
+    await bot.set_my_commands(commands_ru, language_code="ru")
+
+    # English commands
+    commands_en = [
+        BotCommand(command="start", description="Main menu"),
+        BotCommand(command="subs", description="My subscriptions"),
+        BotCommand(command="language", description="Change language"),
+        BotCommand(command="help", description="Help"),
+    ]
+    await bot.set_my_commands(commands_en, language_code="en")
 
 
 def build_storage(settings: Settings):
@@ -76,11 +89,26 @@ def build_common_router() -> Router:
 
     @r.message(Command("help"))
     async def cmd_help(message):
+        await message.answer(_("help-text"))
+
+    @r.message(Command("language"))
+    async def cmd_language(message: Message):
+        # Delete command message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang:ru"),
+                InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:en"),
+            ],
+        ])
+
         await message.answer(
-            "Я помогу оформить подписку на дешёвые авиабилеты.\n"
-            "Команды:\n"
-            "• /start — создать подписку\n"
-            "• /subs — список подписок\n"
+            _("choose-language"),
+            reply_markup=keyboard
         )
 
     @r.message(Command("subs"))
@@ -229,6 +257,9 @@ async def main():
     bot = Bot(token=settings.TG_TOKEN)
     dp = Dispatcher()
 
+    # Register middlewares (i18n first to set locale before other processing)
+    dp.message.middleware(I18nMiddleware())
+    dp.callback_query.middleware(I18nMiddleware())
     dp.message.middleware(AutoDeleteMiddleware())
 
     # Routers: common handlers first, then callbacks, then dialogs

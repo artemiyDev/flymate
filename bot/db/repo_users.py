@@ -49,3 +49,24 @@ class UsersRepo:
     async def get(session: AsyncSession, user_id: int) -> Optional[User]:
         res = await session.execute(select(User).where(User.user_id == user_id))
         return res.scalar_one_or_none()
+
+    @staticmethod
+    async def get_language(session: AsyncSession, user_id: int) -> Optional[str]:
+        """Get user's chosen language."""
+        res = await session.execute(
+            select(User.language).where(User.user_id == user_id)
+        )
+        row = res.first()
+        return row[0] if row else None
+
+    @staticmethod
+    async def set_language(session: AsyncSession, user_id: int, language: str) -> bool:
+        """Set user's language preference."""
+        res = await session.execute(
+            update(User)
+            .where(User.user_id == user_id)
+            .values(language=language)
+            .returning(User.user_id)
+        )
+        row = res.first()
+        return row is not None
