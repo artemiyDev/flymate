@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.settings import Settings
 from bot.db.engine import init_db_engine, get_sessionmaker, close_db_engine
 from bot.db.repo_subscriptions import SubscriptionsRepo
+from bot.db.repo_users import UsersRepo
 
 UTC = timezone.utc
 
@@ -95,23 +96,50 @@ def human_duration(minutes: int) -> str:
     return f"{h}h {m:02d}m"
 
 
-def build_deeplink(aviasales_path: str | None) -> str | None:
-    """Построение прямой ссылки на Aviasales."""
+def build_deeplink(aviasales_path: str | None, marker: str = "", language: str = "ru") -> str | None:
+    """
+    Build direct Aviasales link with affiliate marker.
+    If marker is provided, it will be added as URL parameter for monetization.
+    Language determines domain: ru -> aviasales.ru, en -> aviasales.com
+    """
     if not aviasales_path:
         return None
-    # чаще всего прилетает относительный путь вида /some/path — префиксуем
-    return f"https://aviasales.ru{aviasales_path}"
+
+    # Determine domain based on language
+    domain = "aviasales.ru" if language == "ru" else "aviasales.com"
+
+    # Usually comes as relative path like /some/path — prefix with domain
+    base_url = f"https://{domain}{aviasales_path}"
+
+    # Add affiliate marker if provided
+    if marker:
+        separator = "&" if "?" in base_url else "?"
+        base_url = f"{base_url}{separator}marker={marker}"
+
+    return base_url
 
 
-def build_search_url(origin: str, destination: str, departure_at: str) -> str:
+def build_search_url(origin: str, destination: str, departure_at: str, marker: str = "", language: str = "ru") -> str:
     """
-    Быстрый конструктор human-link для поиска на Aviasales.
+    Build search link for Aviasales with affiliate marker.
+    Format: https://www.aviasales.{ru|com}/search/ORIGINDDDESTINATIONDD?marker=YOUR_MARKER
+    Language determines domain: ru -> aviasales.ru, en -> aviasales.com
     """
     dt = dtparse.isoparse(departure_at)
     day = dt.strftime("%d")
     month = dt.strftime("%m")
-    # "21" в хвосте = шаблон длительности/возврата (можешь поменять под себя)
-    return f"https://www.aviasales.com/search/{origin}{day}{month}{destination}21"
+
+    # Determine domain based on language
+    domain = "aviasales.ru" if language == "ru" else "aviasales.com"
+
+    # Build base search URL
+    base_url = f"https://www.{domain}/search/{origin}{day}{month}{destination}21"
+
+    # Add affiliate marker if provided
+    if marker:
+        base_url = f"{base_url}?marker={marker}"
+
+    return base_url
 
 
 async def get_airport_name(rds: Redis, iata_code: str) -> str:
@@ -205,6 +233,10 @@ async def process_subscription(bot: Bot,
     """
     logger.info(f"Обработка подписки #{sub.id}: {sub.origin}→{sub.destination}, "
                 f"даты={sub.range_from} - {sub.range_to}, макс.цена={sub.max_price} {sub.currency}")
+
+    # Get user language for building correct domain links (ru -> .ru, en -> .com)
+    user_language = await UsersRepo.get_language(session_db, sub.user_id) or "ru"
+    logger.debug(f"Подписка #{sub.id}: язык пользователя = {user_language}")
 
     # Check if subscription date range is in the past
     today = date.today()
@@ -342,8 +374,18 @@ async def process_subscription(bot: Bot,
                 origin = min_offer.get("origin")
                 destination = min_offer.get("destination")
                 dep = min_offer.get("departure_at")
-                link = build_deeplink(min_offer.get("link"))
-                search_link = build_search_url(origin, destination, dep)
+                # Add affiliate marker to all links for monetization
+                # Use user's language to determine domain (ru -> .ru, en -> .com)
+                link = build_deeplink(
+                    min_offer.get("link"),
+                    marker=settings.TRAVELPAYOUTS_MARKER,
+                    language=user_language
+                )
+                search_link = build_search_url(
+                    origin, destination, dep,
+                    marker=settings.TRAVELPAYOUTS_MARKER,
+                    language=user_language
+                )
 
                 # Собираем данные уведомления
                 notifications_to_send.append({

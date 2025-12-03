@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Aviasales (раскомментируешь, когда подключим API)
     AVIASALES_API_TOKEN: str
 
+    # Travelpayouts Partner Program
+    TRAVELPAYOUTS_MARKER: str = Field("", description="Travelpayouts affiliate marker ID for monetization")
+
     # Database
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
