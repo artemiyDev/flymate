@@ -9,11 +9,34 @@ from aiogram_dialog.widgets.kbd import (
     Next, Back, Cancel, Button, Calendar,
 )
 from aiogram_dialog.api.entities.modes import ShowMode, StartMode
+from aiogram_dialog.widgets.kbd.calendar_kbd import CalendarScope
 
 from bot.db.engine import get_sessionmaker
 from bot.db.repo_subscriptions import SubscriptionsRepo
 from bot.gpt_parser import parse_text_request
 from bot.keyboards.reply import get_main_keyboard  # Only used in on_save
+
+
+def _get_calendar(manager: DialogManager, widget_id: str):
+    calendar = manager.dialog().find(widget_id)
+    if calendar is None:
+        return None
+    return calendar.managed(manager)
+
+
+def _sync_calendar(manager: DialogManager, widget_id: str, base_date: date):
+    calendar = _get_calendar(manager, widget_id)
+    if calendar is None:
+        return
+    calendar.set_offset(base_date)
+    calendar.set_scope(CalendarScope.DAYS)
+
+
+async def on_new_sub_start(start_data, manager: DialogManager):
+    """Reset calendar widgets to current dates when dialog starts."""
+    today = date.today()
+    _sync_calendar(manager, "cal_depart", today)
+    _sync_calendar(manager, "cal_return", today)
 
 class NewSubSG(StatesGroup):
     text_input = State()
@@ -100,6 +123,9 @@ async def process_text_input(m: Message, w, manager: DialogManager, value: str):
 
 async def on_manual_fill(c: CallbackQuery, b: Button, manager: DialogManager):
     """Handle 'Fill manually' button click."""
+    today = date.today()
+    _sync_calendar(manager, "cal_depart", today)
+    _sync_calendar(manager, "cal_return", today)
     # Delete and send new message instead of editing
     manager.show_mode = ShowMode.EDIT
     await manager.next()
@@ -129,6 +155,7 @@ async def set_origin(m, w, manager, value: str):
 # destination
 async def set_destination(m, w, manager, value: str):
     manager.dialog_data["destination"] = value.strip().upper()
+    _sync_calendar(manager, "cal_depart", date.today())
     try:
         await m.delete()
     except Exception:
@@ -141,6 +168,7 @@ async def on_depart_selected(
     c: CallbackQuery, widget: Calendar, manager: DialogManager, selected_date: date
 ):
     manager.dialog_data["date_from"] = selected_date.isoformat()
+    _sync_calendar(manager, "cal_return", selected_date)
     await manager.next()
 
 
@@ -399,4 +427,5 @@ new_sub_dialog = Dialog(
     currency_win,
     budget_win,
     confirm_win,
+    on_start=on_new_sub_start,
 )
