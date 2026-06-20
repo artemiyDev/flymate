@@ -70,7 +70,7 @@ services:
       -c max_wal_size=2GB
       -c timezone=${POSTGRES_TZ}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT}:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./db/backups:/backups
@@ -88,7 +88,7 @@ services:
     container_name: flymate-redis
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${REDIS_PORT}:6379"
+      - "${REDIS_PORT}:6379"
     volumes:
       - redis_data:/data
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
